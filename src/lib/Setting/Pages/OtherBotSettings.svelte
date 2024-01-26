@@ -166,7 +166,7 @@
     </SelectInput>
 </Arcodion>
 
-<Arcodion name="superMemory" styled>
+<Arcodion name={language.SuperMemory} styled>
     <span class="text-textcolor mt-4">{language.SuperMemory} {language.model}</span>
     <SelectInput className="mt-2 mb-2" bind:value={$DataBase.supaMemoryType}>
         <OptionInput value="none" >None</OptionInput>
@@ -191,9 +191,7 @@
             <OptionInput value="ada" >OpenAI Ada (Davinci / Curie Only)</OptionInput>
         </SelectInput>
     {/if}
-    {#if $DataBase.useExperimental}
-        <div class="flex">
-            <Check bind:check={$DataBase.hypaMemory} name={language.able + ' ' + language.HypaMemory}/> <Help key="experimental" />
-        </div>
-    {/if}
+    <div class="flex">
+        <Check bind:check={$DataBase.hypaMemory} name={language.able + ' ' + language.HypaMemory}/>
+    </div>
 </Arcodion>

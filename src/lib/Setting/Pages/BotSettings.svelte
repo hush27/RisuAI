@@ -22,7 +22,7 @@
     import { novelLogin } from "src/ts/process/models/nai";
     import { alertConfirm } from "src/ts/alert";
     import OobaSettings from "./OobaSettings.svelte";
-
+  import Arcodion from "src/lib/UI/Arcodion.svelte";
 
     let tokens = {
         mainPrompt: 0,
@@ -148,9 +148,29 @@
         <Button size="sm" className="mb-2" on:click={() => {setRecommended($DataBase.aiModel, 'ask')}}>{language.recommendedPreset}</Button>
     </div>
 {/if}
-{#if $DataBase.aiModel === 'palm2' || $DataBase.subModel === 'palm2'}
-    <span class="text-textcolor">Palm2 {language.apiKey}</span>
-    <TextInput marginBottom={true} size={"sm"} placeholder="..." bind:value={$DataBase.palmAPI}/>
+{#if $DataBase.aiModel.startsWith('palm2') || $DataBase.subModel.startsWith('palm2') || $DataBase.aiModel.startsWith('gemini') || $DataBase.subModel.startsWith('gemini')}
+    <span class="text-textcolor">
+        {#if $DataBase.google.projectId === 'aigoogle'}
+            GoogleAI API Key
+        {:else}
+            Google Bearer Token
+        {/if}
+    </span>
+    <TextInput marginBottom={true} size={"sm"} placeholder="..." bind:value={$DataBase.google.accessToken}/>
+
+    {#if $DataBase.google.projectId !== 'aigoogle'}
+        <span class="text-textcolor">Google Project ID</span>
+        <TextInput marginBottom={true} size={"sm"} placeholder="..." bind:value={$DataBase.google.projectId}/>
+    {/if}
+
+    <Check check={$DataBase.google.projectId !== 'aigoogle'} className="mb-2" name={'Use Vertex AI'} onChange={(v) => {
+        if(!v){
+            $DataBase.google.projectId = 'aigoogle'
+        }
+        else{
+            $DataBase.google.projectId = ''
+        }
+    }}/>
 {/if}
 {#if $DataBase.aiModel.startsWith('novellist') || $DataBase.subModel.startsWith('novellist')}
     <span class="text-textcolor">NovelList {language.apiKey}</span>
@@ -163,6 +183,13 @@
 {#if $DataBase.aiModel.startsWith('claude') || $DataBase.subModel.startsWith('claude')}
     <span class="text-textcolor">Claude {language.apiKey}</span>
     <TextInput marginBottom={true} size={"sm"} placeholder="..." bind:value={$DataBase.claudeAPIKey}/>
+    {#if $DataBase.useExperimental}
+        <Check name="Claude Aws" bind:check={$DataBase.claudeAws}> <Help key="experimental" /></Check>
+    {/if}
+{/if}
+{#if $DataBase.aiModel.startsWith('mistral') || $DataBase.subModel.startsWith('mistral')}
+    <span class="text-textcolor">Mistral {language.apiKey}</span>
+    <TextInput marginBottom={true} size={"sm"} placeholder="..." bind:value={$DataBase.mistralKey}/>
 {/if}
 {#if $DataBase.aiModel === 'reverse_proxy' || $DataBase.subModel === 'reverse_proxy'}
     <span class="text-textcolor mt-2">{language.forceReplaceUrl} URL <Help key="forceUrl"/></span>
@@ -224,8 +251,10 @@
                 <OptionInput value="anthropic/claude-v1-100k">Claude v1 100k</OptionInput>
                 <OptionInput value="anthropic/claude-1.2">Claude v1.2</OptionInput>
             {:else}
+                <OptionInput value={"risu/free"}>Free Auto</OptionInput>
+                <OptionInput value={"openrouter/auto"}>Openrouter Auto</OptionInput>
                 {#each m as model}
-                    <OptionInput value={model}>{model}</OptionInput>
+                    <OptionInput value={model.id}>{model.name}</OptionInput>
                 {/each}
             {/if}
         </SelectInput>
@@ -240,6 +269,14 @@
 {#if $DataBase.aiModel.startsWith('gpt') || $DataBase.aiModel === 'reverse_proxy' || $DataBase.aiModel === 'openrouter'}
     <div class="flex items-center mt-2 mb-4">
         <Check bind:check={$DataBase.useStreaming} name={`Response ${language.streaming}`}/>
+    </div>
+{/if}
+{#if $DataBase.aiModel.startsWith('openrouter')}
+    <div class="flex items-center">
+        <Check bind:check={$DataBase.openrouterFallback} name={language.openrouterFallback}/>
+    </div>
+    <div class="flex items-center">
+        <Check bind:check={$DataBase.openrouterMiddleOut} name={language.openrouterMiddleOut}/>
     </div>
 {/if}
 
@@ -288,7 +325,11 @@
     {#if !isTauri}
         <span class="text-draculared text-xs mb-2">You are using web version. you must use ngrok or other tunnels to use your local webui.</span>
     {/if}
-    <span class="text-draculared text-xs mb-2">Warning: For Ooba version over 1.7, use "Reverse Proxy" as model, and use url like http://127.0.0.1:5000/v1/chat/completions</span>
+    <span class="text-draculared text-xs mb-2">Warning: For Ooba version over 1.7, use "Ooba" as model, and use url like http://127.0.0.1:5000/v1/chat/completions</span>
+{/if}
+{#if $DataBase.aiModel === 'ooba' || $DataBase.subModel === 'ooba'}
+    <span class="text-textcolor mt-2">Ooba {language.providerURL}</span>
+    <TextInput marginBottom={true} bind:value={$DataBase.textgenWebUIBlockingURL} placeholder="https://..."/>
 {/if}
 {#if advancedBotSettings}
     {#if !$DataBase.promptTemplate}
@@ -324,7 +365,13 @@
 {/if}
 <span class="text-textcolor2 mb-6 text-sm">{($DataBase.temperature / 100).toFixed(2)}</span>
 
-{#if $DataBase.aiModel === 'textgen_webui' || $DataBase.aiModel === 'mancer' || $DataBase.aiModel.startsWith('local_')}
+{#if $DataBase.aiModel.startsWith('openrouter')}
+    <span class="text-textcolor">Top K</span>
+    <SliderInput min={0} max={100} step={1} bind:value={$DataBase.top_k}/>
+    <span class="text-textcolor2 mb-6 text-sm">{($DataBase.top_k).toFixed(0)}</span>
+{/if}
+
+{#if $DataBase.aiModel === 'textgen_webui' || $DataBase.aiModel === 'mancer' || $DataBase.aiModel.startsWith('local_') || $DataBase.aiModel.startsWith('hf:::')}
     <span class="text-textcolor">Repetition Penalty</span>
     <SliderInput min={1} max={1.5} step={0.01} bind:value={$DataBase.ooba.repetition_penalty}/>
     <span class="text-textcolor2 mb-6 text-sm">{($DataBase.ooba.repetition_penalty).toFixed(2)}</span>
@@ -486,11 +533,15 @@
     <SliderInput min={0} max={1} step={0.01} bind:value={$DataBase.ainconfig.typical_p}/>
     <span class="text-textcolor2 mb-6 text-sm">{($DataBase.ainconfig.typical_p).toFixed(2)}</span>
 {:else}
+    <span class="text-textcolor">Top P <Help key="topP"/></span>
+    <SliderInput min={0} max={1} step={0.01} bind:value={$DataBase.top_p}/>
+    <span class="text-textcolor2 mb-6 text-sm">{($DataBase.top_p).toFixed(2)}</span>
+
     <span class="text-textcolor">{language.frequencyPenalty} <Help key="frequencyPenalty"/></span>
-    <SliderInput min={0} max={100} bind:value={$DataBase.frequencyPenalty} />
+    <SliderInput min={0} max={200} bind:value={$DataBase.frequencyPenalty} />
     <span class="text-textcolor2 mb-6 text-sm">{($DataBase.frequencyPenalty / 100).toFixed(2)}</span>
     <span class="text-textcolor">{language.presensePenalty} <Help key="presensePenalty"/></span>
-    <SliderInput min={0} max={100} bind:value={$DataBase.PresensePenalty} />
+    <SliderInput min={0} max={200} bind:value={$DataBase.PresensePenalty} />
     <span class="text-textcolor2 mb-6 text-sm">{($DataBase.PresensePenalty / 100).toFixed(2)}</span>
 
     <span class="text-textcolor mt-2">{language.autoSuggest} <Help key="autoSuggest"/></span>
@@ -499,8 +550,8 @@
 {/if}
 {/if}
 
-{#if ($DataBase.reverseProxyOobaMode && $DataBase.aiModel === 'reverse_proxy')}
-    <OobaSettings />
+{#if ($DataBase.reverseProxyOobaMode && $DataBase.aiModel === 'reverse_proxy') || ($DataBase.aiModel === 'ooba')}
+    <OobaSettings instructionMode={$DataBase.aiModel === 'ooba'} />
 {/if}
 
 
@@ -509,13 +560,11 @@
         <span class="text-textcolor mb-2 mt-4">{language.formatingOrder} <Help key="formatOrder"/></span>
         <DropList bind:list={$DataBase.formatingOrder} />
     {/if}
-    <span class="text-textcolor mt-2">Bias <Help key="bias"/><Button on:click={changeshowbias} size="sm" className="ml-2">Hide/Show Bias</Button></span>
-    <div class="p-2 border border-selected round mt-2 rounded-md">
-    {#if $DataBase.showbias}
+    <Arcodion styled name="Bias " help="bias">
         <table class="contain w-full max-w-full tabler">
             <tr>
-                <th class="font-medium w-1/2">Bias</th>
-                <th class="font-medium w-1/3">{language.value}</th>
+                <th class="font-medium">Bias</th>
+                <th class="font-medium">{language.value}</th>
                 <th>
                     <button class="font-medium cursor-pointer hover:text-green-500 w-full flex justify-center items-center" on:click={() => {
                         let bia = $DataBase.bias
@@ -531,11 +580,11 @@
             {/if}
             {#each $DataBase.bias as bias, i}
                 <tr>
-                    <td class="font-medium truncate w-1/2">
+                    <td class="font-medium truncate">
                         <TextInput bind:value={$DataBase.bias[i][0]} size="lg" fullwidth/>
                     </td>
-                    <td class="font-medium truncate w-1/3">
-                        <NumberInput bind:value={$DataBase.bias[i][1]} max={100} min={-100} size="lg" fullwidth/>
+                    <td class="font-medium truncate">
+                        <NumberInput bind:value={$DataBase.bias[i][1]} max={100} min={-101} size="lg" fullwidth/>
                     </td>
                     <td>
                         <button class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full" on:click={() => {
@@ -547,13 +596,8 @@
                 </tr>
             {/each}
         </table>
-        <Button on:click={() => exportToJsonFile($DataBase.bias)} size="sm" className="mt-4">Export Bias</Button>
-        <input type="file" id="fileInput" on:change={importFromJsonFile} style="display:none;">
-        <Button on:click={() => document.getElementById('fileInput').click()} size="sm" className="mt-4">Import Bias</Button>
-        {:else}
-        <div class="text-textcolor2">Bias is hidden.</div>
-        {/if}
-        </div>
+    </Arcodion>
+
 
     {#if !$DataBase.promptTemplate}
         <div class="flex items-center mt-4">

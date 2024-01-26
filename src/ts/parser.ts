@@ -11,14 +11,7 @@ import { selectedCharID } from './stores';
 import { calcString } from './process/infunctions';
 import { findCharacterbyId } from './util';
 import { getInlayImage } from './image';
-import { cloneDeep } from 'lodash';
 import { autoMarkNew } from './plugins/automark';
-
-const convertora = new showdown.Converter({
-    simpleLineBreaks: true,
-    strikethrough: true,
-    tables: true
-})
 
 const mconverted = new Marked({
     gfm: true,
@@ -29,12 +22,22 @@ const mconverted = new Marked({
     }
 })
 
-const safeConvertor = new showdown.Converter({
-    simpleLineBreaks: true,
-    strikethrough: true,
-    tables: true,
-    backslashEscapesHTMLTags: true
-})
+mconverted.use({
+    tokenizer: {
+        del(src) {
+            const cap = /^~~+(?=\S)([\s\S]*?\S)~~+/.exec(src);
+            if (cap) {
+                return {
+                    type: 'del',
+                    raw: cap[0],
+                    text: cap[2],
+                    tokens: []
+                };
+            }
+            return false;
+        }
+    }
+});
 
 
 
@@ -59,6 +62,14 @@ DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
                     return "x-risu-" + v
                 }).join(' ')
             }
+            break
+        }
+        case 'href':{
+            if(data.attrValue.startsWith('http://') || data.attrValue.startsWith('https://')){
+                node.setAttribute('target', '_blank')
+                break
+            }
+            data.attrValue = ''
             break
         }
     }
@@ -165,19 +176,9 @@ export async function ParseMarkdown(data:string, charArg:(character|simpleCharac
     }
     data = await parseInlayImages(data)
     if(db.automark){
-        // data = autoMarkNew(DOMPurify.sanitize(data, {
-        //     ADD_TAGS: ["iframe", "style", "risu-style", "x-em"],
-        //     ADD_ATTR: ["allow", "allowfullscreen", "frameborder", "scrolling", "risu-btn"],
-        //     FORBID_ATTR: ["href"]
-        // }))
-        // return data
-        // data = autoMarkNew(data)
-        // data = encodeStyle(data)
-        // data = mconverted.parse(data)
         return (DOMPurify.sanitize(autoMarkNew(data), {
             ADD_TAGS: ["iframe", "style", "risu-style", "x-em"],
             ADD_ATTR: ["allow", "allowfullscreen", "frameborder", "scrolling", "risu-btn"],
-            FORBID_ATTR: ["href"]
         }))
     }
     else{
@@ -186,13 +187,12 @@ export async function ParseMarkdown(data:string, charArg:(character|simpleCharac
         return decodeStyle(DOMPurify.sanitize(data, {
             ADD_TAGS: ["iframe", "style", "risu-style", "x-em"],
             ADD_ATTR: ["allow", "allowfullscreen", "frameborder", "scrolling", "risu-btn"],
-            FORBID_ATTR: ["href"]
         }))
     }
 }
 
 export function parseMarkdownSafe(data:string) {
-    return DOMPurify.sanitize(safeConvertor.makeHtml(data), {
+    return DOMPurify.sanitize(mconverted.parse(data), {
         FORBID_TAGS: ["a", "style"],
         FORBID_ATTR: ["style", "href", "class"]
     })
@@ -253,9 +253,6 @@ export async function convertImage(data:Uint8Array) {
     }
     const type = checkImageType(data)
     if(type !== 'Unknown' && type !== 'WEBP' && type !== 'AVIF'){
-        if(type === 'PNG' && isAPNG(data)){
-            return data
-        }
         return await resizeAndConvert(data)
     }
     return data
@@ -294,11 +291,11 @@ async function resizeAndConvert(imageData: Uint8Array): Promise<Buffer> {
             context.drawImage(image, 0, 0, width, height);
 
             // Try to convert to WebP
-            let base64 = canvas.toDataURL('image/webp', 90);
+            let base64 = canvas.toDataURL('image/webp', 75);
 
             // If WebP is not supported, convert to JPEG
             if (base64.indexOf('data:image/webp') != 0) {
-                base64 = canvas.toDataURL('image/jpeg', 90);
+                base64 = canvas.toDataURL('image/jpeg', 75);
             }
 
             // Convert it to Uint8Array
@@ -311,7 +308,7 @@ async function resizeAndConvert(imageData: Uint8Array): Promise<Buffer> {
 
 type ImageType = 'JPEG' | 'PNG' | 'GIF' | 'BMP' | 'AVIF' | 'WEBP' | 'Unknown';
 
-function checkImageType(arr:Uint8Array):ImageType {
+export function checkImageType(arr:Uint8Array):ImageType {
     const isJPEG = arr[0] === 0xFF && arr[1] === 0xD8 && arr[arr.length-2] === 0xFF && arr[arr.length-1] === 0xD9;
     const isPNG = arr[0] === 0x89 && arr[1] === 0x50 && arr[2] === 0x4E && arr[3] === 0x47 && arr[4] === 0x0D && arr[5] === 0x0A && arr[6] === 0x1A && arr[7] === 0x0A;
     const isGIF = arr[0] === 0x47 && arr[1] === 0x49 && arr[2] === 0x46 && arr[3] === 0x38 && (arr[4] === 0x37 || arr[4] === 0x39) && arr[5] === 0x61;
@@ -326,22 +323,6 @@ function checkImageType(arr:Uint8Array):ImageType {
     if (isAVIF) return "AVIF";
     if (isWEBP) return "WEBP";
     return "Unknown";
-}
-
-function isAPNG(pngData: Uint8Array): boolean {
-    const pngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-    const acTL = [0x61, 0x63, 0x54, 0x4C];
-  
-    if (!pngData.slice(0, pngSignature.length).every((v, i) => v === pngSignature[i])) {
-      throw new Error('Invalid PNG data');
-    }
-  
-    for (let i = pngSignature.length; i < pngData.length - 12; i += 4) {
-      if (pngData.slice(i + 4, i + 8).every((v, j) => v === acTL[j])) {
-        return true;
-      }
-    }
-    return false;
 }
 
 function wppParser(data:string){
@@ -394,7 +375,7 @@ type matcherArg = {
     consistantChar?:boolean
 }
 const matcher = (p1:string,matcherArg:matcherArg) => {
-    if(p1.length > 10000){
+    if(p1.length > 100000){
         return ''
     }
     const lowerCased = p1.toLocaleLowerCase()
@@ -625,7 +606,9 @@ const matcher = (p1:string,matcherArg:matcherArg) => {
             //output, like 1:30:00
             return hours.toString() + ':' + minutes.toString().padStart(2,'0') + ':' + seconds.toString().padStart(2,'0')
         }
-        
+        case 'br':{
+            return '\n'
+        }
     }
     const arra = p1.split("::")
     if(arra.length > 1){
@@ -782,10 +765,12 @@ export function risuChatParser(da:string, arg:{
     var?:{[key:string]:string}
     tokenizeAccurate?:boolean
     consistantChar?:boolean
+    visualize?:boolean
 } = {}):string{
     const chatID = arg.chatID ?? -1
     const db = arg.db ?? get(DataBase)
     const aChara = arg.chara
+    const visualize = arg.visualize ?? false
     let chara:character|string = null
 
     if(aChara){
@@ -816,6 +801,7 @@ export function risuChatParser(da:string, arg:{
     let commentMode = false
     let commentLatest:string[] = [""]
     let commentV = new Uint8Array(512)
+    let thinkingMode = false
     const matcherObj = {
         chatID: chatID,
         chara: chara,
@@ -879,6 +865,7 @@ export function risuChatParser(da:string, arg:{
                     }
                     case 'Comment':{
                         if(!commentMode){
+                            thinkingMode = false
                             commentMode = true
                             commentLatest = nested.map((f) => f)
                             if(commentLatest[0].endsWith('\n')){
@@ -889,6 +876,34 @@ export function risuChatParser(da:string, arg:{
                         break
                     }
                     case '/Comment':{
+                        if(commentMode){
+                            nested = commentLatest
+                            v = commentV
+                            commentMode = false
+                        }
+                        break
+                    }
+                    case 'Thoughts':{
+                        if(!visualize){
+                            nested[0] += `<${dat}>`
+                            break
+                        }
+                        if(!commentMode){
+                            thinkingMode = true
+                            commentMode = true
+                            commentLatest = nested.map((f) => f)
+                            if(commentLatest[0].endsWith('\n')){
+                                commentLatest[0] = commentLatest[0].substring(0, commentLatest[0].length - 1)
+                            }
+                            commentV = new Uint8Array(v)
+                        }
+                        break
+                    }
+                    case '/Thoughts':{
+                        if(!visualize){
+                            nested[0] += `<${dat}>`
+                            break
+                        }
                         if(commentMode){
                             nested = commentLatest
                             v = commentV
@@ -910,6 +925,14 @@ export function risuChatParser(da:string, arg:{
             }
         }
         pointer++
+    }
+    if(commentMode){
+        nested = commentLatest
+        v = commentV
+        if(thinkingMode){
+            nested[0] += `<div>Thinking...</div>`
+        }
+        commentMode = false
     }
     if(nested.length === 1){
         return nested[0]
@@ -1004,4 +1027,21 @@ export function getVarChat(targetIndex = -1, chara:character|groupChat = null){
         }
     }
     return vars
+}
+
+
+async function editDisplay(text){
+    let rt = ""
+    if(!text.includes("<obs>")){
+        return text
+    }
+
+    for(let i=0;i<text.length;i++){
+        const obfiEffect = "!@#$%^&*"
+        if(Math.random() < 0.4){
+            rt += obfiEffect[Math.floor(Math.random() * obfiEffect.length)]
+        }
+        rt += text[i]
+    }
+    return rt
 }

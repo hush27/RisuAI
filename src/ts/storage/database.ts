@@ -4,18 +4,18 @@ import { changeLanguage, language } from '../../lang';
 import type { RisuPlugin } from '../plugins/plugins';
 import type {triggerscript as triggerscriptMain} from '../process/triggers';
 import { downloadFile, saveAsset as saveImageGlobal } from './globalApi';
-import { clone, cloneDeep } from 'lodash';
+import { cloneDeep } from 'lodash';
 import { defaultAutoSuggestPrompt, defaultJailbreak, defaultMainPrompt } from './defaultPrompts';
 import { alertNormal, alertSelect } from '../alert';
 import type { NAISettings } from '../process/models/nai';
 import { prebuiltNAIpresets, prebuiltPresets } from '../process/templates/templates';
 import { defaultColorScheme, type ColorScheme } from '../gui/colorscheme';
-import type { Proompt } from '../process/proompt';
+import type { Proompt, ProomptSettings } from '../process/proompt';
 import type { OobaChatCompletionRequestParams } from '../model/ooba';
 
 export const DataBase = writable({} as any as Database)
 export const loadedStore = writable(false)
-export let appVer = "1.61.3"
+export let appVer = "1.76.3"
 export let webAppSubVer = ''
 
 export function setDatabase(data:Database){
@@ -288,33 +288,12 @@ export function setDatabase(data:Database){
     if(checkNullish(data.loreBookPage) || data.loreBook.length < data.loreBookPage){
         data.loreBookPage = 0
     }
-    if(checkNullish(data.globalscript)){
-        data.globalscript = []
-    }
-    if(checkNullish(data.sendWithEnter)){
-        data.sendWithEnter = true
-    }
-    if(checkNullish(data.autoSuggestPrompt)){
-        data.autoSuggestPrompt = defaultAutoSuggestPrompt
-    }
-    if(checkNullish(data.autoSuggestPrefix)){
-        data.autoSuggestPrefix = ""
-    }
-    if(checkNullish(data.autoSuggestClean)){
-        data.autoSuggestClean = true
-    }
-    if(checkNullish(data.imageCompression)){
-        data.imageCompression = true
-    }
-    if(checkNullish(data.showbias)){
-        data.showbias = true
-    }
-    if(checkNullish(data.usePlainFetch)){
-        data.usePlainFetch = false
-    }
-    if(checkNullish(data.usePlainFetchNAI)){
-        data.usePlainFetchNAI = false
-    }
+    data.globalscript ??= []
+    data.sendWithEnter ??= true
+    data.autoSuggestPrompt ??= defaultAutoSuggestPrompt
+    data.autoSuggestPrefix ??= ""
+    data.autoSuggestClean ??= true
+    data.imageCompression ??= true
     if(!data.formatingOrder.includes('personaPrompt')){
         data.formatingOrder.splice(data.formatingOrder.indexOf('main'),0,'personaPrompt')
     }
@@ -358,9 +337,36 @@ export function setDatabase(data:Database){
     data.newOAIHandle ??= true
     data.gptVisionQuality ??= 'low'
     data.huggingfaceKey ??= ''
+    data.statistics ??= {}
     data.reverseProxyOobaArgs ??= {
         mode: 'instruct'
     }
+    data.top_p ??= 1
+    if(typeof(data.top_p) !== 'number'){
+        //idk why type changes, but it does so this is a fix
+        data.top_p = 1
+    }
+    //@ts-ignore
+    data.google ??= {}
+    data.google.accessToken ??= ''
+    data.google.projectId ??= ''
+    data.genTime ??= 1
+    data.proomptSettings ??= {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: false,
+        sendName: false,
+        utilOverride: false,
+        customChainOfThought: false,
+        maxThoughtTagDepth: -1
+    }
+    data.keiServerURL ??= ''
+    data.top_k ??= 0
+    data.proomptSettings.maxThoughtTagDepth ??= -1
+    data.openrouterFallback ??= true
+    data.openrouterMiddleOut ??= false
+    data.removePunctuationHypa ??= true
+
     changeLanguage(data.language)
     DataBase.set(data)
 }
@@ -405,6 +411,9 @@ export interface Database{
         automark?: boolean
         romanizer?: boolean
         metrica?: boolean
+        oaiFix?: boolean
+        oaiFixEmdash?: boolean
+        oaiFixLetters?: boolean
     }
     currentPluginProvider: string
     zoomsize:number
@@ -498,6 +507,7 @@ export interface Database{
             expires_in?: number
         }
         useSync?:boolean
+        kei?:boolean
     },
     classicMaxWidth: boolean,
     useChatSticker:boolean,
@@ -511,6 +521,8 @@ export interface Database{
     personaPrompt:string
     openrouterRequestModel:string
     openrouterKey:string
+    openrouterMiddleOut:boolean
+    openrouterFallback:boolean
     selectedPersona:number
     personas:{
         personaPrompt:string
@@ -553,7 +565,26 @@ export interface Database{
     huggingfaceKey:string
     allowAllExtentionFiles?:boolean
     translatorPrompt:string
-    showbias:boolean
+    top_p: number,
+    google: {
+        accessToken: string
+        projectId: string
+    }
+    mistralKey?:string
+    chainOfThought?:boolean
+    genTime:number
+    proomptSettings: ProomptSettings
+    keiServerURL:string
+    statistics: {
+        newYear2024?: {
+            messages: number
+            chats: number
+        }
+    },
+    top_k:number
+    claudeAws:boolean
+    lastPatchNoteCheckVersion?:string,
+    removePunctuationHypa?:boolean
 }
 
 export interface customscript{
@@ -665,7 +696,8 @@ export interface character{
     hfTTS?: {
         model: string
         language: string
-    }
+    },
+    vits?: OnnxModelFiles
 }
 
 
@@ -749,6 +781,8 @@ export interface botPreset{
     localStopStrings?: string[]
     customProxyRequestModel?: string
     reverseProxyOobaArgs?: OobaChatCompletionRequestParams
+    top_p?: number
+    proomptSettings?: ProomptSettings
 
 }
 
@@ -942,7 +976,8 @@ export const presetTemplate:botPreset = {
     ainconfig: cloneDeep(defaultAIN),
     reverseProxyOobaArgs: {
         mode: 'instruct'
-    }
+    },
+    top_p: 1,
 
 }
 
@@ -998,7 +1033,9 @@ export function saveCurrentPreset(){
         localStopStrings: db.localStopStrings,
         autoSuggestPrompt: db.autoSuggestPrompt,
         customProxyRequestModel: db.customProxyRequestModel,
-        reverseProxyOobaArgs: cloneDeep(db.reverseProxyOobaArgs) ?? null
+        reverseProxyOobaArgs: cloneDeep(db.reverseProxyOobaArgs) ?? null,
+        top_p: db.top_p ?? 1,
+        proomptSettings: cloneDeep(db.proomptSettings) ?? null
     }
     db.botPresets = pres
     setDatabase(db)
@@ -1067,11 +1104,20 @@ export function setPreset(db:Database, newPres: botPreset){
     db.reverseProxyOobaArgs = cloneDeep(newPres.reverseProxyOobaArgs) ?? {
         mode: 'instruct'
     }
+    db.top_p = newPres.top_p ?? 1
+    db.proomptSettings = cloneDeep(newPres.proomptSettings) ?? {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: false,
+        sendName: false,
+        utilOverride: false
+    }
     return db
 }
 
 import { encode as encodeMsgpack, decode as decodeMsgpack } from "msgpackr";
 import * as fflate from "fflate";
+import type { OnnxModelFiles } from '../process/embedding/transformers';
 
 export async function downloadPreset(id:number){
     saveCurrentPreset()

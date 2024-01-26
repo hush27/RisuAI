@@ -60,7 +60,7 @@
     }
 
     function displaya(message:string){
-        msgDisplay = risuChatParser(message, {chara: name, chatID: idx, rmVar: true})
+        msgDisplay = risuChatParser(message, {chara: name, chatID: idx, rmVar: true, visualize: true})
     }
 
     const setStatusMessage = (message:string, timeout:number = 0)=>{
@@ -92,7 +92,7 @@
             if(translateText){
                 const marked = await ParseMarkdown(data, charArg, mode, chatID)
                 translating = true
-                const translated = await translateHTML(marked, false)
+                const translated = await translateHTML(marked, false, charArg)
                 translating = false
                 lastParsed = translated
                 lastCharArg = charArg
@@ -146,7 +146,7 @@
                         </button>    
                     {/if}
                     {#if idx > -1}
-                        {#if $CurrentCharacter.type !== 'group' && $CurrentCharacter.ttsMode !== 'none'}
+                        {#if $CurrentCharacter.type !== 'group' && $CurrentCharacter.ttsMode !== 'none' && ($CurrentCharacter.ttsMode)}
                             <button class="ml-2 hover:text-green-500 transition-colors" on:click={()=>{
                                 return sayTTS(null, message)
                             }}>
